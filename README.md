@@ -1,1 +1,1 @@
-# DIMIS
+# Diversity Minimal Item Set (DiMIS)
