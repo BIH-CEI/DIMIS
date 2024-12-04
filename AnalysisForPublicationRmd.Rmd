@@ -1,0 +1,311 @@
+---
+title: "DIMIS Analysis"
+output:
+  html_document:
+    df_print: paged
+  html: default
+  pdf_document: default
+date: "2024-11-27"
+---
+# load libraries
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Load Data and Data Cleaning
+```{r}
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+library(writexl)
+library(ggplot2)
+
+# Load the data
+Master <- read_excel("DIMIS_Master.xlsx")
+
+# Inspect data structure and column names
+names(Master)
+str(Master)
+```
+## Clean and Restructure Data
+```{r}
+# Clean and restructure data
+Master <- Master %>%
+  mutate(
+    Domain = as.factor(Domain),
+    ISO_LOINC = as.factor(ISO_LOINC),
+    ISO_SCT = as.factor(ISO_SCT),
+    NH_SCT = as.numeric(NH_SCT),
+    MM_SCT = as.numeric(MM_SCT)
+  )
+
+# Check the updated structure
+str(Master)
+
+# Export cleaned data to Excel for quality check
+write_xlsx(Master, "DIMIS_Master_Clean.xlsx")
+```
+
+*** 
+# ISO-Scores of SCT Codes
+## Percentages of ISO-Scores
+```{r}
+# Calculate counts and percentages for ISO_LOINC
+summary_table_SCT <- Master %>%
+  count(ISO_SCT) %>%
+  mutate(Percentage = (n / sum(n)) * 100)
+
+# Display the summary table
+knitr::kable(summary_table_SCT, caption = "Counts and Percentages of ISO SCT Codes")
+```
+## Calculate ISO-Score
+```{r}
+# Ensure ISO_LOINC is converted to numeric if it's a factor
+summary_table_SCT$ISO_SCT <- as.numeric(as.character(summary_table_SCT$ISO_SCT))
+
+# Calculate the weighted sum of equivalence measures
+weighted_sum_SCT <- sum(summary_table_SCT$ISO_SCT * summary_table_SCT$n)
+
+# Calculate the total number of maps
+total_maps_SCT <- sum(summary_table_SCT$n)
+
+# Compute the average equivalence score
+average_equivalence_score_SCT <- weighted_sum_SCT / total_maps_SCT
+
+# Print the result
+cat("The Equivalence Score is:", round(average_equivalence_score_SCT, 2), "\n")
+```
+
+
+
+*** 
+# ISO-Scores of LOINC Codes
+## Percentages of ISO-Scores
+```{r}
+# Calculate counts and percentages for ISO_LOINC
+summary_table_LOINC <- Master %>%
+  count(ISO_LOINC) %>%
+  mutate(Percentage = (n / sum(n)) * 100)
+
+# Display the summary table
+knitr::kable(summary_table_LOINC, caption = "Counts and Percentages of ISO LOINC Codes")
+
+```
+## Calculate ISO-Score
+```{r}
+# Ensure ISO_LOINC is converted to numeric if it's a factor
+summary_table_LOINC$ISO_LOINC <- as.numeric(as.character(summary_table_LOINC$ISO_LOINC))
+
+# Calculate the weighted sum of equivalence measures
+weighted_sum_LOINC <- sum(summary_table_LOINC$ISO_LOINC * summary_table_LOINC$n)
+
+# Calculate the total number of maps
+total_maps_LOINC <- sum(summary_table_LOINC$n)
+
+# Compute the average equivalence score
+average_equivalence_score_LOINC <- weighted_sum_LOINC / total_maps_LOINC
+
+# Print the result
+cat("The Equivalence Score is:", round(average_equivalence_score_LOINC, 2), "\n")
+```
+
+# ISO-Scores by Domain
+*** 
+Prepare SCT Data
+## Cross-Table of ISO Scores and Domains
+```{r}
+# Generate a cross-table of ISO_SCT by Domain and calculate proportions
+SCT_table <- table(Master$ISO_SCT, Master$Domain)
+SCT_prob <- prop.table(SCT_table, 2)
+
+# Convert the table to a data frame
+SCT_dataframe <- as.data.frame.matrix(SCT_prob)
+
+# Add rownames as a column for long-format conversion
+SCT_dataframe$ISO_SCT <- rownames(SCT_dataframe)
+
+```
+
+## Convert Data to Long Format
+```{r}
+# Convert wide-format dataframe to long format
+library(reshape2)
+SCT_DataLong <- melt(
+  SCT_dataframe,
+  id.vars = "ISO_SCT",
+  value.name = "proportion"
+)
+
+```
+
+*** 
+Prepare LOINC Data
+## Cross-Table of ISO Scores and Domains
+```{r}
+# Generate a cross-table of ISO_LOINC by Domain and calculate proportions
+LOINC_table <- table(Master$ISO_LOINC, Master$Domain)
+LOINC_prob <- prop.table(LOINC_table, 2)
+
+# Convert the table to a data frame
+LOINC_dataframe <- as.data.frame.matrix(LOINC_prob)
+
+# Add rownames as a column for long-format conversion
+LOINC_dataframe$ISO_Loinc <- rownames(LOINC_dataframe)
+
+```
+
+## Convert Data to Long Format
+```{r}
+# Convert wide-format dataframe to long format
+LOINC_DataLong <- melt(
+  LOINC_dataframe,
+  id.vars = "ISO_Loinc",
+  value.name = "proportion"
+)
+
+```
+
+## Prepare Both Datasets for Combined Dataset
+```{r}
+# Add a source column to each dataset
+SCT_DataLong$Source <- "SNOMED"
+LOINC_DataLong$Source <- "LOINC"
+# all columns need to have the same name
+colnames(SCT_DataLong)[colnames(SCT_DataLong) == "ISO_SCT"] <- "ISO_Code"
+colnames(LOINC_DataLong)[colnames(LOINC_DataLong) == "ISO_Loinc"] <- "ISO_Code"
+
+# Combine the two datasets
+combined_data <- rbind(SCT_DataLong, LOINC_DataLong)
+```
+## Graph
+```{r}
+p <- ggplot(combined_data, aes(y = variable, x = proportion, fill = ISO_Code)) +
+  geom_bar(stat = "identity") +
+  
+  # Customize axes and labels
+  ylab("") +
+  labs(
+    fill = "ISO Score",
+    title = "ISO Scores for SNOMED and LOINC Codes by DIMIS Domain"
+  ) +
+  
+  # Add color palette
+  scale_fill_brewer(palette = "BuPu") +
+  
+  # Adjust faceting to make the plots wider
+  facet_wrap(~ Source, scales = "free_x", ncol = 2) +
+  
+  # Enhance plot aesthetics
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 16, face = "bold"),
+    axis.text.y = element_text(size = 8),  # Reduce y-axis text size
+    strip.text = element_text(size = 14),  # Adjust facet label size
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    panel.spacing = unit(1, "lines")  # Add spacing between facets
+  )
+
+```
+
+```{r}
+print(p)
+```
+```{r}
+ggsave("~/Library/CloudStorage/OneDrive-Charité-UniversitätsmedizinBerlin/BIH/Repositories/DIMIS/graphPaper.png", plot = p, width = 10, height = 6, dpi = 300)
+```
+
+***
+# Krippendorf
+## SCT
+```{r}
+library(irr)
+# Step 1: Remove rows where either NH_SCT or MM_SCT has the value -1
+Kripp_clean_SCT <- Master %>%
+  filter(NH_SCT != -1, MM_SCT != -1)
+
+# Step 2: Calculate the sum of matches and non-matches
+sum_matches <- sum(Kripp_clean_SCT$NH_SCT == Kripp_clean_SCT$MM_SCT)
+sum_non_matches <- sum(Kripp_clean_SCT$NH_SCT != Kripp_clean_SCT$MM_SCT)
+
+# Step 3: Calculate proportions
+total_rows <- nrow(Kripp_clean_SCT)
+proportion_matches <- sum_matches / total_rows
+proportion_non_matches <- sum_non_matches / total_rows
+
+# Step 4: Prepare data for Krippendorff's alpha
+agreement_matrix_SCT <- as.matrix(Kripp_clean_SCT[, c("NH_SCT", "MM_SCT")])
+
+# Step 5: Calculate Krippendorff's alpha
+result_SCT <- kripp.alpha(agreement_matrix_SCT, method = "nominal")  # Use "interval" for numeric data
+
+# Step 6: Create a summary table
+summary_table <- data.frame(
+  Metric = c("Matches", "Non-Matches", "Krippendorff Alpha"),
+  Count = c(sum_matches, sum_non_matches, NA),  # NA for alpha, as it's not a count
+  Proportion = c(proportion_matches, proportion_non_matches, result_SCT$value)
+)
+
+# Print the summary table
+print(summary_table)
+print(result_SCT)
+```
+
+
+## LOINC
+
+```{r}
+# Step 1: Remove rows where either NH_SCT or MM_SCT has the value -1
+Kripp_clean_LOINC <- Master %>%
+  filter(NH_LOINC != -1, MM_LOINC != -1)
+
+# Step 2: Prepare data for Krippendorff's alpha
+# Select only the two relevant columns and convert to a matrix
+agreement_matrix_LOINC <- as.matrix(Kripp_clean_LOINC[, c("NH_SCT", "MM_SCT")])
+
+# Step 3: Calculate Krippendorff's alpha (nominal or interval, depending on data type)
+result_LOINC <- kripp.alpha(agreement_matrix_LOINC, method = "nominal")  # Use "interval" for numeric data
+
+# Print the result
+print(result_LOINC)
+```
+
+```{r}
+library(irr)
+# Step 1: Remove rows where either NH_SCT or MM_SCT has the value -1
+Kripp_clean_LOINC <- Master %>%
+  filter(NH_LOINC != -1, MM_LOINC != -1)
+
+# Step 2: Calculate the sum of matches and non-matches
+sum_matches <- sum(Kripp_clean_LOINC$NH_LOINC == Kripp_clean_LOINC$MM_LOINC)
+sum_non_matches <- sum(Kripp_clean_LOINC$NH_LOINC != Kripp_clean_LOINC$MM_LOINC)
+
+# Step 3: Calculate proportions
+total_rows <- nrow(Kripp_clean_LOINC)
+proportion_matches <- sum_matches / total_rows
+proportion_non_matches <- sum_non_matches / total_rows
+
+# Step 4: Prepare data for Krippendorff's alpha
+agreement_matrix_LOINC <- as.matrix(Kripp_clean_LOINC[, c("NH_SCT", "MM_SCT")])
+
+# Step 5: Calculate Krippendorff's alpha
+result_LOINC <- kripp.alpha(agreement_matrix_LOINC, method = "nominal")  # Use "interval" for numeric data
+
+# Step 6: Create a summary table
+summary_table <- data.frame(
+  Metric = c("Matches", "Non-Matches", "Krippendorff Alpha"),
+  Count = c(sum_matches, sum_non_matches, NA),  # NA for alpha, as it's not a count
+  Proportion = c(proportion_matches, proportion_non_matches, result_LOINC$value)
+)
+
+# Print the summary table
+print(summary_table)
+print(result_LOINC)
+```
+
+
+
+
+
+
+
